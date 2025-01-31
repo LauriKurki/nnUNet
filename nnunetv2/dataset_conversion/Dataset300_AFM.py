@@ -61,9 +61,16 @@ def generate_nnunet_samples(
     end: int,
 ):
     """Generate a chunk of nnUNet samples from the AFM dataset."""
-    tar_path = os.path.join(output_dir, f"chunk_{start:06d}_{end:06d}.tar")
+    image_tar_path = os.path.join(output_dir, f"image_chunk_{start:06d}_{end:06d}.tar")
+    label_tar_path = os.path.join(output_dir, f"label_chunk_{start:06d}_{end:06d}.tar")
 
-    for i, ((mode, h5_idx), idx) in enumerate(zip(indices[start:end], counter_indices)):
+    # Create a tmp directory for the images and labels
+    image_tmp_folder = os.path.join(output_dir, 'imagesTr', str(start))
+    label_tmp_folder = os.path.join(output_dir, 'labelsTr', str(start))
+    maybe_mkdir_p(image_tmp_folder)
+    maybe_mkdir_p(label_tmp_folder)
+
+    for i, (mode, h5_idx) in enumerate(indices[start:end]):
         with h5py.File(input_file, 'r') as f:
             sample = {
                 "x": f[mode]['X'][h5_idx],
@@ -80,21 +87,22 @@ def generate_nnunet_samples(
         x = x.astype(np.float32)
         seg = seg.astype(np.uint8)
 
-        x_path = os.path.join(output_dir, f"imagesTr/afm_{idx:06d}_0000.nii.gz")
-        seg_path = os.path.join(output_dir, f"labelsTr/afm_{idx:06d}_0000.nii.gz")
+        x_path = os.path.join(image_tmp_folder, f"afm_{i:06d}_0000.nii.gz")
+        seg_path = os.path.join(label_tmp_folder, f"afm_{i:06d}.nii.gz")
 
         # Save the images
         nib.save(nib.Nifti1Image(x, affine=None), x_path)
         nib.save(nib.Nifti1Image(seg, affine=None), seg_path)
 
-    # Create a tar file
-    with tarfile.open(tar_path, 'w') as tar:
-        tar.add(os.path.join(output_dir, 'imagesTr'), arcname='imagesTr')
-        tar.add(os.path.join(output_dir, 'labelsTr'), arcname='labelsTr')
+    # Create tar files for the images and labels
+    with tarfile.open(image_tar_path, "w") as tar:
+        tar.add(image_tmp_folder, arcname=os.path.basename(image_tmp_folder))
+    with tarfile.open(label_tar_path, "w") as tar:
+        tar.add(label_tmp_folder, arcname=os.path.basename(label_tmp_folder))
 
-    # Remove the images and labels but keep the imagesTr and labelsTr directories
-    shutil.rmtree(os.path.join(output_dir, 'imagesTr'))
-    shutil.rmtree(os.path.join(output_dir, 'labelsTr'))
+    # Remove the tmp folders
+    shutil.rmtree(image_tmp_folder, ignore_errors=True)
+    shutil.rmtree(label_tmp_folder, ignore_errors=True)
 
 
 def generate_nnunet_samples_wrapper(args):
